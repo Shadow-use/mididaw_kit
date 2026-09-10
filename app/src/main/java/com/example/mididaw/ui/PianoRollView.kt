@@ -3,6 +3,7 @@ package com.example.mididaw.ui
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -21,35 +22,44 @@ private val trackColors = listOf(
 )
 
 /**
- * Проста візуалізація: ноти = прямокутники. Поки без редагування —
- * лише перегляд + горизонтальний скрол. Наступний крок — drag/resize жестами.
+ * Піано-рол з авто-масштабом по вертикалі: показує лише той діапазон нот,
+ * який реально використовується в пісні (+невеликий запас), а не всі 0..127.
+ * Додано вертикальний скрол про запас, якщо діапазон все одно великий.
  */
 @Composable
 fun PianoRollView(
     song: MidiSong,
     pxPerTick: Float = 0.05f,
-    rowHeight: Float = 14f,
+    rowHeight: Float = 20f,
     modifier: Modifier = Modifier
 ) {
-    val maxTick = song.tracks
-        .flatMap { it.events }
-        .maxOfOrNull { it.start + it.dur } ?: 0L
+    val allEvents = song.tracks.flatMap { it.events }
 
-    val widthDp = max(400f, maxTick * pxPerTick / 2f) // приблизна конвертація px->dp
+    val maxTick = allEvents.maxOfOrNull { it.start + it.dur } ?: 0L
+
+    val notesUsed = allEvents.map { it.note }
+    val minNote = (notesUsed.minOrNull() ?: 48) - 3
+    val maxNote = (notesUsed.maxOrNull() ?: 84) + 3
+    val noteRange = max(1, maxNote - minNote)
+
+    val widthDp = max(400f, maxTick * pxPerTick / 2f)   // приблизна конвертація px->dp
+    val heightDp = noteRange * rowHeight / 2f            // те саме для висоти
 
     Canvas(
         modifier = modifier
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .horizontalScroll(rememberScrollState())
             .width(widthDp.dp)
-            .height(600.dp)
+            .height(heightDp.dp)
     ) {
         song.tracks.forEachIndexed { trackIndex, track ->
             val color = trackColors[trackIndex % trackColors.size]
             for (e in track.events) {
                 val x = e.start * pxPerTick
                 val w = max(2f, e.dur * pxPerTick)
-                val y = (127 - e.note) * rowHeight // вища нота — вище на екрані
+                // вище нота — вище на екрані; діапазон обрізаний під minNote..maxNote
+                val y = (maxNote - e.note) * rowHeight
 
                 drawRect(
                     color = color,
