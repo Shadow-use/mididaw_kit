@@ -23,6 +23,9 @@ import com.example.mididaw.model.MidiSong
  * Демонстраційний екран.
  * Поклади свій jingle-bells.json (або будь-який інший з твого архіву)
  * у app/src/main/assets/ — і він завантажиться й програється тут.
+ *
+ * Play грає ПОТОЧНУ (можливо відредаговану) версію пісні — onSongChanged
+ * з EditablePianoRollView оновлює song в реальному часі.
  */
 @Composable
 fun MainScreen(assetFileName: String = "jingle-bells.json") {
@@ -59,8 +62,9 @@ fun MainScreen(assetFileName: String = "jingle-bells.json") {
                 Text("■ Stop")
             }
 
-            PianoRollView(
-                song = s,
+            EditablePianoRollView(
+                initialSong = s,
+                onSongChanged = { updated -> song = updated },
                 modifier = Modifier.fillMaxSize()
             )
         }
