@@ -12,7 +12,6 @@ class AudioRenderer(
 
     /**
      * Рендерить усю пісню (всі треки змішані в одну доріжку) у float-масив [-1, 1].
-     * Простий offline-рендер — годиться для коротких мелодій (кілька хвилин).
      */
     fun render(song: MidiSong): FloatArray {
         val msPerTick = 60000.0 / (song.bpm * song.ticksPerBeat)
@@ -35,37 +34,55 @@ class AudioRenderer(
         val buffer = FloatArray(totalSamples)
 
         for (n in flatEvents) {
-            val freq = NoteUtils.noteToFrequency(n.note)
-            val gain = (n.vel / 127.0) * 0.3 // запас, щоб уникнути кліпінгу при накладенні нот
-
-            val startSample = (n.startSec * sampleRate).toInt()
-            val noteTotalSamples = ((n.durSec + envelope.tailSec()) * sampleRate).toInt()
-
-            var phase = 0.0
-            val phaseInc = freq / sampleRate
-
-            for (i in 0 until noteTotalSamples) {
-                val sampleIdx = startSample + i
-                if (sampleIdx >= totalSamples) break
-
-                val tSec = i.toDouble() / sampleRate
-                val amp = envelope.amplitudeAt(tSec, n.durSec)
-                if (amp > 0.0) {
-                    val raw = waveform.sample(phase)
-                    buffer[sampleIdx] += (raw * amp * gain).toFloat()
-                }
-                phase += phaseInc
-            }
+            mixNote(buffer, n.startSec, n.durSec, n.note, n.vel)
         }
 
-        // м'який лімітер — якщо багато нот одночасно, не даємо звуку "тріщати"
+        normalize(buffer)
+        return buffer
+    }
+
+    /** Рендерить одну коротку ноту (для звукового прев'ю в редакторі). */
+    fun renderSingleNote(note: Int, vel: Int, durationMs: Long): FloatArray {
+        val durSec = durationMs / 1000.0
+        val totalSec = durSec + envelope.tailSec()
+        val totalSamples = (totalSec * sampleRate).toInt() + 1
+        val buffer = FloatArray(totalSamples)
+        mixNote(buffer, 0.0, durSec, note, vel)
+        normalize(buffer)
+        return buffer
+    }
+
+    private fun mixNote(buffer: FloatArray, startSec: Double, durSec: Double, note: Int, vel: Int) {
+        val freq = NoteUtils.noteToFrequency(note)
+        val gain = (vel / 127.0) * 0.35
+
+        val startSample = (startSec * sampleRate).toInt()
+        val noteTotalSamples = ((durSec + envelope.tailSec()) * sampleRate).toInt()
+
+        var phase = 0.0
+        val phaseInc = freq / sampleRate
+
+        for (i in 0 until noteTotalSamples) {
+            val sampleIdx = startSample + i
+            if (sampleIdx < 0 || sampleIdx >= buffer.size) {
+                phase += phaseInc
+                continue
+            }
+            val tSec = i.toDouble() / sampleRate
+            val amp = envelope.amplitudeAt(tSec, durSec)
+            if (amp > 0.0) {
+                buffer[sampleIdx] += (waveform.sample(phase) * amp * gain).toFloat()
+            }
+            phase += phaseInc
+        }
+    }
+
+    private fun normalize(buffer: FloatArray) {
         var maxAbs = 0.0001f
         for (s in buffer) maxAbs = max(maxAbs, abs(s))
         if (maxAbs > 1.0f) {
             val scale = 0.98f / maxAbs
             for (i in buffer.indices) buffer[i] = buffer[i] * scale
         }
-
-        return buffer
     }
 }

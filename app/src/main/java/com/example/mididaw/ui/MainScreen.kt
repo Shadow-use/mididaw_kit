@@ -2,6 +2,8 @@ package com.example.mididaw.ui
 
 import android.app.Activity
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,6 +29,7 @@ import androidx.compose.ui.unit.dp
 import com.example.mididaw.audio.MidiPlayer
 import com.example.mididaw.model.MidiJsonParser
 import com.example.mididaw.model.MidiSong
+import com.example.mididaw.model.MidiTrack
 import kotlinx.coroutines.delay
 import java.io.File
 
@@ -38,7 +41,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     val player = remember { MidiPlayer() }
 
     var song by remember { mutableStateOf<MidiSong?>(null) }
-    var assetFileName by remember { mutableStateOf(defaultAssetFileName) }
+    var loadVersion by remember { mutableStateOf(0) }
     var availableAssets by remember { mutableStateOf<List<String>>(emptyList()) }
 
     var activeTrackIndex by remember { mutableStateOf<Int?>(null) } // null = "Усі"
@@ -49,21 +52,43 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     var channelMenuExpanded by remember { mutableStateOf(false) }
     var instrumentMenuExpanded by remember { mutableStateOf(false) }
 
+    fun loadSong(newSong: MidiSong) {
+        song = newSong
+        activeTrackIndex = null
+        player.stop()
+        playState = PlayState.STOPPED
+        currentPlaybackTick = null
+        loadVersion++
+    }
+
+    val openDocLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            try {
+                val text = context.contentResolver.openInputStream(uri)
+                    ?.bufferedReader()?.use { it.readText() }
+                if (text != null) {
+                    loadSong(MidiJsonParser.parse(text))
+                }
+            } catch (e: Exception) {
+                Toast.makeText(context, "Не вдалося відкрити файл: ${e.message}", Toast.LENGTH_LONG).show()
+            }
+        }
+    }
+
     LaunchedEffect(Unit) {
         availableAssets = try {
             context.assets.list("")?.filter { it.endsWith(".json") } ?: emptyList()
         } catch (e: Exception) {
             emptyList()
         }
-    }
-
-    LaunchedEffect(assetFileName) {
-        val jsonText = context.assets.open(assetFileName).bufferedReader().use { it.readText() }
-        song = MidiJsonParser.parse(jsonText)
-        activeTrackIndex = null
-        player.stop()
-        playState = PlayState.STOPPED
-        currentPlaybackTick = null
+        try {
+            val jsonText = context.assets.open(defaultAssetFileName).bufferedReader().use { it.readText() }
+            loadSong(MidiJsonParser.parse(jsonText))
+        } catch (e: Exception) {
+            Toast.makeText(context, "Не вдалося завантажити $defaultAssetFileName", Toast.LENGTH_LONG).show()
+        }
     }
 
     LaunchedEffect(playState) {
@@ -92,9 +117,14 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
 
             Row {
                 IconBtn(if (playState == PlayState.PLAYING) "⏸" else "▶") {
+                    // якщо вибраний конкретний канал — граємо ТІЛЬКИ його
+                    val songToPlay = activeTrackIndex?.let { idx ->
+                        s.tracks.getOrNull(idx)?.let { t -> s.copy(tracks = listOf(t)) }
+                    } ?: s
+
                     when (playState) {
                         PlayState.STOPPED -> {
-                            player.play(s)
+                            player.play(songToPlay)
                             playState = PlayState.PLAYING
                         }
                         PlayState.PLAYING -> {
@@ -128,6 +158,18 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                                 channelMenuExpanded = false
                             })
                         }
+                        DropdownMenuItem(text = { Text("+ Додати канал") }, onClick = {
+                            val newTrack = MidiTrack(
+                                name = "Track ${s.tracks.size + 1}",
+                                channel = s.tracks.size,
+                                program = 0,
+                                events = emptyList()
+                            )
+                            val newIndex = s.tracks.size
+                            song = s.copy(tracks = s.tracks + newTrack)
+                            activeTrackIndex = newIndex
+                            channelMenuExpanded = false
+                        })
                     }
                 }
 
@@ -158,11 +200,20 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                 Box {
                     IconBtn("☰") { menuExpanded = true }
                     DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
-                        DropdownMenuItem(text = { Text("— Завантажити —") }, onClick = {}, enabled = false)
+                        DropdownMenuItem(text = { Text("📂 Відкрити файл...") }, onClick = {
+                            menuExpanded = false
+                            openDocLauncher.launch(arrayOf("*/*"))
+                        })
+                        DropdownMenuItem(text = { Text("— Приклади —") }, onClick = {}, enabled = false)
                         availableAssets.forEach { f ->
                             DropdownMenuItem(text = { Text(f) }, onClick = {
-                                assetFileName = f
                                 menuExpanded = false
+                                try {
+                                    val text = context.assets.open(f).bufferedReader().use { it.readText() }
+                                    loadSong(MidiJsonParser.parse(text))
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Помилка: ${e.message}", Toast.LENGTH_LONG).show()
+                                }
                             })
                         }
                         DropdownMenuItem(text = { Text("Зберегти") }, onClick = {
@@ -187,11 +238,12 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
 
             EditablePianoRollView(
                 initialSong = s,
-                loadKey = assetFileName,
+                loadKey = loadVersion,
                 activeTrackIndex = activeTrackIndex,
                 currentPlaybackTick = currentPlaybackTick,
                 onSongChanged = { updated -> song = updated },
                 onActiveTrackChangeForNewNotes = { idx -> activeTrackIndex = idx },
+                onPreviewNote = { note, durMs -> player.previewNote(note, durationMs = durMs) },
                 modifier = Modifier.fillMaxSize()
             )
         }

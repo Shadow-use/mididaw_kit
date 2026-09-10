@@ -1,0 +1,459 @@
+{
+  "title": "grade",
+  "bpm": 90.0,
+  "ticks_per_beat": 480,
+  "tracks": [
+    {
+      "name": "Piano - Student Melody",
+      "channel": 0,
+      "program": 0,
+      "events": [
+        {
+          "note": 62,
+          "start": 0,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 240,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 480,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 720,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 960,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 1200,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 1440,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 1680,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 67,
+          "start": 1920,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 2400,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 2880,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 3360,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 3840,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 4080,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 4320,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 4560,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 4800,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 5040,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 5280,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 5520,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 67,
+          "start": 5760,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 6240,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 6720,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 7200,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 7680,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 7920,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 8160,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 8400,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 8640,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 8880,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 9120,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 9360,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 67,
+          "start": 9600,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 10080,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 10560,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 11040,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 11520,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 11760,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 12000,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 12240,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 12480,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 12720,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 12960,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 13200,
+          "dur": 240,
+          "vel": 90
+        },
+        {
+          "note": 67,
+          "start": 13440,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 13920,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 14400,
+          "dur": 480,
+          "vel": 90
+        },
+        {
+          "note": 65,
+          "start": 14880,
+          "dur": 60,
+          "vel": 90
+        },
+        {
+          "note": 64,
+          "start": 14940,
+          "dur": 60,
+          "vel": 90
+        },
+        {
+          "note": 62,
+          "start": 15000,
+          "dur": 360,
+          "vel": 90
+        }
+      ]
+    },
+    {
+      "name": "Piano - Teacher Right Hand",
+      "channel": 1,
+      "program": 0,
+      "events": [
+        {
+          "note": 46,
+          "start": 0,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 43,
+          "start": 960,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 45,
+          "start": 1920,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 50,
+          "start": 2880,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 46,
+          "start": 3840,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 43,
+          "start": 4800,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 45,
+          "start": 5760,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 50,
+          "start": 6720,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 47,
+          "start": 7680,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 53,
+          "start": 7680,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 43,
+          "start": 8640,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 50,
+          "start": 8640,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 44,
+          "start": 9600,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 51,
+          "start": 9600,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 50,
+          "start": 10560,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 53,
+          "start": 10560,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 46,
+          "start": 11520,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 53,
+          "start": 11520,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 43,
+          "start": 12480,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 50,
+          "start": 12480,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 45,
+          "start": 13440,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 52,
+          "start": 13440,
+          "dur": 960,
+          "vel": 90
+        },
+        {
+          "note": 38,
+          "start": 14400,
+          "dur": 960,
+          "vel": 90
+        }
+      ]
+    }
+  ]
+}

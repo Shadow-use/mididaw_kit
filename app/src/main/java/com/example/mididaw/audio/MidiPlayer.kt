@@ -17,20 +17,7 @@ class MidiPlayer(private val sampleRate: Int = 44100) {
 
     private val renderer = AudioRenderer(sampleRate)
 
-    /** Рендерить і одразу програє пісню з початку. */
-    fun play(song: MidiSong) {
-        stop()
-
-        val pcmFloat = renderer.render(song)
-        lastDurationMs = (pcmFloat.size.toLong() * 1000L) / sampleRate
-
-        val pcm16 = ShortArray(pcmFloat.size) { i ->
-            val v = max(-1.0f, min(1.0f, pcmFloat[i]))
-            (v * Short.MAX_VALUE).toInt().toShort()
-        }
-
-        val bufferSizeBytes = pcm16.size * 2
-
+    private fun buildAudioTrack(pcm16: ShortArray): AudioTrack {
         val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -45,11 +32,27 @@ class MidiPlayer(private val sampleRate: Int = 44100) {
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(bufferSizeBytes)
+            .setBufferSizeInBytes(pcm16.size * 2)
             .setTransferMode(AudioTrack.MODE_STATIC)
             .build()
-
         track.write(pcm16, 0, pcm16.size)
+        return track
+    }
+
+    private fun toPcm16(pcmFloat: FloatArray): ShortArray =
+        ShortArray(pcmFloat.size) { i ->
+            val v = max(-1.0f, min(1.0f, pcmFloat[i]))
+            (v * Short.MAX_VALUE).toInt().toShort()
+        }
+
+    /** Рендерить і одразу програє пісню (або відфільтрований трек) з початку. */
+    fun play(song: MidiSong) {
+        stop()
+
+        val pcmFloat = renderer.render(song)
+        lastDurationMs = (pcmFloat.size.toLong() * 1000L) / sampleRate
+
+        val track = buildAudioTrack(toPcm16(pcmFloat))
         track.play()
         audioTrack = track
     }
@@ -94,5 +97,28 @@ class MidiPlayer(private val sampleRate: Int = 44100) {
         val track = audioTrack ?: return 0L
         val frames = track.playbackHeadPosition.toLong()
         return (frames * 1000L) / sampleRate
+    }
+
+    /**
+     * Коротке "fire and forget" прев'ю однієї ноти — не чіпає основний
+     * audioTrack (грає паралельно, не зупиняючи/не заважаючи Play).
+     */
+    fun previewNote(note: Int, vel: Int = 100, durationMs: Long = 250) {
+        val pcmFloat = renderer.renderSingleNote(note, vel, durationMs)
+        if (pcmFloat.isEmpty()) return
+        val pcm16 = toPcm16(pcmFloat)
+        val previewTrack = buildAudioTrack(pcm16)
+        previewTrack.play()
+        Thread {
+            try {
+                Thread.sleep(durationMs + 400)
+            } catch (_: InterruptedException) {
+            }
+            try {
+                previewTrack.stop()
+            } catch (_: Exception) {
+            }
+            previewTrack.release()
+        }.start()
     }
 }
