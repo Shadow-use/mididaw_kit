@@ -1,9 +1,17 @@
 package com.example.mididaw.ui
 
+import android.app.Activity
+import android.widget.Toast
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -13,58 +21,177 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.mididaw.audio.MidiPlayer
 import com.example.mididaw.model.MidiJsonParser
 import com.example.mididaw.model.MidiSong
+import kotlinx.coroutines.delay
+import java.io.File
 
-/**
- * Демонстраційний екран.
- * Поклади свій jingle-bells.json (або будь-який інший з твого архіву)
- * у app/src/main/assets/ — і він завантажиться й програється тут.
- *
- * Play грає ПОТОЧНУ (можливо відредаговану) версію пісні — onSongChanged
- * з EditablePianoRollView оновлює song в реальному часі.
- */
+private enum class PlayState { STOPPED, PLAYING, PAUSED }
+
 @Composable
-fun MainScreen(assetFileName: String = "jingle-bells.json") {
+fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     val context = LocalContext.current
-    var song by remember { mutableStateOf<MidiSong?>(null) }
     val player = remember { MidiPlayer() }
-    var isPlaying by remember { mutableStateOf(false) }
 
-    LaunchedEffect(assetFileName) {
-        val jsonText = context.assets.open(assetFileName)
-            .bufferedReader()
-            .use { it.readText() }
-        song = MidiJsonParser.parse(jsonText)
+    var song by remember { mutableStateOf<MidiSong?>(null) }
+    var assetFileName by remember { mutableStateOf(defaultAssetFileName) }
+    var availableAssets by remember { mutableStateOf<List<String>>(emptyList()) }
+
+    var activeTrackIndex by remember { mutableStateOf<Int?>(null) } // null = "Усі"
+    var playState by remember { mutableStateOf(PlayState.STOPPED) }
+    var currentPlaybackTick by remember { mutableStateOf<Long?>(null) }
+
+    var menuExpanded by remember { mutableStateOf(false) }
+    var channelMenuExpanded by remember { mutableStateOf(false) }
+    var instrumentMenuExpanded by remember { mutableStateOf(false) }
+
+    LaunchedEffect(Unit) {
+        availableAssets = try {
+            context.assets.list("")?.filter { it.endsWith(".json") } ?: emptyList()
+        } catch (e: Exception) {
+            emptyList()
+        }
     }
 
-    Column(modifier = Modifier.fillMaxSize().padding(16.dp)) {
+    LaunchedEffect(assetFileName) {
+        val jsonText = context.assets.open(assetFileName).bufferedReader().use { it.readText() }
+        song = MidiJsonParser.parse(jsonText)
+        activeTrackIndex = null
+        player.stop()
+        playState = PlayState.STOPPED
+        currentPlaybackTick = null
+    }
+
+    LaunchedEffect(playState) {
+        while (playState == PlayState.PLAYING) {
+            val s = song
+            if (s != null && player.lastDurationMs > 0) {
+                val posMs = player.currentPositionMs()
+                if (posMs >= player.lastDurationMs) {
+                    playState = PlayState.STOPPED
+                    currentPlaybackTick = null
+                    break
+                }
+                val msPerTick = 60000.0 / (s.bpm * s.ticksPerBeat)
+                currentPlaybackTick = (posMs / msPerTick).toLong()
+            }
+            delay(30)
+        }
+    }
+
+    Column(modifier = Modifier.fillMaxSize().padding(8.dp)) {
         val s = song
         if (s == null) {
             Text("Завантаження...")
         } else {
-            Text(text = "${s.title}  |  BPM: ${s.bpm}")
+            Text(text = "${s.title}  |  BPM: ${s.bpm}", modifier = Modifier.padding(bottom = 4.dp))
 
-            Button(onClick = {
-                player.play(s)
-                isPlaying = true
-            }) {
-                Text(if (isPlaying) "Грає…" else "▶ Play")
-            }
+            Row {
+                IconBtn(if (playState == PlayState.PLAYING) "⏸" else "▶") {
+                    when (playState) {
+                        PlayState.STOPPED -> {
+                            player.play(s)
+                            playState = PlayState.PLAYING
+                        }
+                        PlayState.PLAYING -> {
+                            player.pause()
+                            playState = PlayState.PAUSED
+                        }
+                        PlayState.PAUSED -> {
+                            player.resume()
+                            playState = PlayState.PLAYING
+                        }
+                    }
+                }
+                IconBtn("■") {
+                    player.stop()
+                    playState = PlayState.STOPPED
+                    currentPlaybackTick = null
+                }
 
-            Button(onClick = {
-                player.stop()
-                isPlaying = false
-            }) {
-                Text("■ Stop")
+                Box {
+                    IconBtn(activeTrackIndex?.let { s.tracks.getOrNull(it)?.name } ?: "Усі", wide = true) {
+                        channelMenuExpanded = true
+                    }
+                    DropdownMenu(expanded = channelMenuExpanded, onDismissRequest = { channelMenuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("Усі") }, onClick = {
+                            activeTrackIndex = null
+                            channelMenuExpanded = false
+                        })
+                        s.tracks.forEachIndexed { i, t ->
+                            DropdownMenuItem(text = { Text(t.name) }, onClick = {
+                                activeTrackIndex = i
+                                channelMenuExpanded = false
+                            })
+                        }
+                    }
+                }
+
+                if (activeTrackIndex != null) {
+                    Box {
+                        val curProgram = s.tracks.getOrNull(activeTrackIndex!!)?.program ?: 0
+                        IconBtn("${curProgram + 1}", wide = true) { instrumentMenuExpanded = true }
+                        DropdownMenu(
+                            expanded = instrumentMenuExpanded,
+                            onDismissRequest = { instrumentMenuExpanded = false }
+                        ) {
+                            (1..128).forEach { p ->
+                                DropdownMenuItem(text = { Text("$p") }, onClick = {
+                                    val idx = activeTrackIndex
+                                    if (idx != null) {
+                                        val newTracks = s.tracks.mapIndexed { i, t ->
+                                            if (i == idx) t.copy(program = p - 1) else t
+                                        }
+                                        song = s.copy(tracks = newTracks)
+                                    }
+                                    instrumentMenuExpanded = false
+                                })
+                            }
+                        }
+                    }
+                }
+
+                Box {
+                    IconBtn("☰") { menuExpanded = true }
+                    DropdownMenu(expanded = menuExpanded, onDismissRequest = { menuExpanded = false }) {
+                        DropdownMenuItem(text = { Text("— Завантажити —") }, onClick = {}, enabled = false)
+                        availableAssets.forEach { f ->
+                            DropdownMenuItem(text = { Text(f) }, onClick = {
+                                assetFileName = f
+                                menuExpanded = false
+                            })
+                        }
+                        DropdownMenuItem(text = { Text("Зберегти") }, onClick = {
+                            menuExpanded = false
+                            val current = song
+                            if (current != null) {
+                                val json = MidiJsonParser.toJson(current)
+                                val dir = context.getExternalFilesDir(null)
+                                val safeTitle = current.title.ifBlank { "song" }.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                                val file = File(dir, "${safeTitle}_${System.currentTimeMillis()}.json")
+                                file.writeText(json)
+                                Toast.makeText(context, "Збережено: ${file.name}", Toast.LENGTH_LONG).show()
+                            }
+                        })
+                        DropdownMenuItem(text = { Text("Вихід") }, onClick = {
+                            menuExpanded = false
+                            (context as? Activity)?.finish()
+                        })
+                    }
+                }
             }
 
             EditablePianoRollView(
                 initialSong = s,
+                loadKey = assetFileName,
+                activeTrackIndex = activeTrackIndex,
+                currentPlaybackTick = currentPlaybackTick,
                 onSongChanged = { updated -> song = updated },
+                onActiveTrackChangeForNewNotes = { idx -> activeTrackIndex = idx },
                 modifier = Modifier.fillMaxSize()
             )
         }
@@ -72,5 +199,17 @@ fun MainScreen(assetFileName: String = "jingle-bells.json") {
 
     DisposableEffect(Unit) {
         onDispose { player.stop() }
+    }
+}
+
+@Composable
+private fun IconBtn(label: String, wide: Boolean = false, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = if (wide) 10.dp else 6.dp, vertical = 6.dp),
+        modifier = Modifier.padding(end = 4.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5E35B1))
+    ) {
+        Text(label, color = Color.White)
     }
 }

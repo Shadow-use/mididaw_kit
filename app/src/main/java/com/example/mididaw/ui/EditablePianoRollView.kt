@@ -34,6 +34,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import com.example.mididaw.model.MidiEvent
 import com.example.mididaw.model.MidiSong
 import kotlin.math.max
@@ -45,6 +46,12 @@ private val trackColors = listOf(
 )
 
 private val blackKeySemitones = setOf(1, 3, 6, 8, 10)
+private val noteNames = listOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
+
+private fun noteLabel(n: Int): String {
+    val octave = n / 12 - 1
+    return "${noteNames[((n % 12) + 12) % 12]}$octave"
+}
 
 private data class EditableNote(
     val id: Int,
@@ -66,19 +73,28 @@ private fun rebuildSong(original: MidiSong, notes: List<EditableNote>): MidiSong
     return original.copy(tracks = newTracks)
 }
 
+/**
+ * loadKey — окремий ключ для скидання внутрішнього списку нот (наприклад,
+ * ім'я файлу). Зміна самого initialSong (через редагування program/каналу
+ * ззовні) НЕ скидає ноти — лише зміна loadKey.
+ */
 @Composable
 fun EditablePianoRollView(
     initialSong: MidiSong,
+    loadKey: Any,
+    activeTrackIndex: Int?,
+    currentPlaybackTick: Long?,
     onSongChanged: (MidiSong) -> Unit,
+    onActiveTrackChangeForNewNotes: (Int) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val ticksPerBeat = max(1, initialSong.ticksPerBeat)
     var pxPerTick by remember { mutableStateOf(0.08f) }
     var rowHeight by remember { mutableStateOf(28f) }
-    val snapTicks = max(1, ticksPerBeat / 4) // сітка = 16-та нота
+    val snapTicks = max(1, ticksPerBeat / 4)
 
-    var nextId = 0
-    val notes = remember {
+    val notes = remember(loadKey) {
+        var nextId = 0
         mutableStateListOf<EditableNote>().apply {
             initialSong.tracks.forEachIndexed { trackIdx, track ->
                 track.events.forEach { e ->
@@ -87,9 +103,12 @@ fun EditablePianoRollView(
             }
         }
     }
+    var idCounter by remember(loadKey) { mutableStateOf(notes.size) }
 
-    val selectedIds = remember { mutableStateListOf<Int>() }
+    val selectedIds = remember(loadKey) { mutableStateListOf<Int>() }
     val density = LocalDensity.current
+    val hScroll = rememberScrollState()
+    val vScroll = rememberScrollState()
 
     fun commit() = onSongChanged(rebuildSong(initialSong, notes))
     fun indexOfId(id: Int) = notes.indexOfFirst { it.id == id }
@@ -140,7 +159,10 @@ fun EditablePianoRollView(
         commit()
     }
 
-    val maxTick = notes.maxOfOrNull { it.start + it.dur } ?: (ticksPerBeat.toLong() * 4)
+    val maxTick = max(
+        notes.maxOfOrNull { it.start + it.dur } ?: (ticksPerBeat.toLong() * 4),
+        (currentPlaybackTick ?: 0L) + ticksPerBeat
+    )
     val minNote = (notes.minOfOrNull { it.note } ?: 48) - 3
     val maxNote = (notes.maxOfOrNull { it.note } ?: 84) + 3
     val noteRange = max(1, maxNote - minNote)
@@ -148,9 +170,9 @@ fun EditablePianoRollView(
     val widthDp = max(400f, maxTick * pxPerTick + 60f)
     val heightDp = noteRange * rowHeight
 
-    Column(
-        modifier = modifier.background(Color(0xFF121212))
-    ) {
+    val rulerW = 52f
+
+    Column(modifier = modifier.background(Color(0xFF121212))) {
         // Зум
         Row(
             modifier = Modifier
@@ -192,137 +214,232 @@ fun EditablePianoRollView(
             }
         } else {
             Text(
-                "Тап по ноті — виділити (декілька тапів — декілька нот)",
+                "Тап по ноті — виділити. Тап по пустому місцю — додати ноту.",
                 color = Color(0xFFAAAAAA),
                 modifier = Modifier.padding(4.dp)
             )
         }
 
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(420.dp)
-                .background(Color(0xFF121212))
-                .verticalScroll(rememberScrollState())
-                .horizontalScroll(rememberScrollState())
-        ) {
+        // Верхня лінійка (номери тактів) + кутовий спейсер
+        Row {
             Box(
                 modifier = Modifier
-                    .width(widthDp.dp)
-                    .height(heightDp.dp)
+                    .width(rulerW.dp)
+                    .height(22.dp)
+                    .background(Color(0xFF1A1A1A))
+            )
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .height(22.dp)
+                    .horizontalScroll(hScroll)
+                    .background(Color(0xFF1A1A1A))
             ) {
-                // Сітка
-                Canvas(
-                    modifier = Modifier
-                        .width(widthDp.dp)
-                        .height(heightDp.dp)
-                ) {
-                    for (n in minNote..maxNote) {
-                        val rowYDp = (maxNote - n) * rowHeight
-                        if ((n % 12 + 12) % 12 in blackKeySemitones) {
-                            drawRect(
-                                color = Color(0xFF1A1A1A),
-                                topLeft = Offset(0f, rowYDp.dp.toPx()),
-                                size = Size(widthDp.dp.toPx(), rowHeight.dp.toPx())
-                            )
-                        }
-                        drawLine(
-                            color = Color(0xFF2A2A2A),
-                            start = Offset(0f, rowYDp.dp.toPx()),
-                            end = Offset(widthDp.dp.toPx(), rowYDp.dp.toPx()),
-                            strokeWidth = 1f
-                        )
-                    }
+                Box(modifier = Modifier.width(widthDp.dp).height(22.dp)) {
                     val beatsTotal = (maxTick / ticksPerBeat).toInt() + 2
-                    for (b in 0..beatsTotal) {
-                        val xDp = b * ticksPerBeat * pxPerTick
-                        val isBar = b % 4 == 0
-                        drawLine(
-                            color = if (isBar) Color(0xFF505050) else Color(0xFF2A2A2A),
-                            start = Offset(xDp.dp.toPx(), 0f),
-                            end = Offset(xDp.dp.toPx(), heightDp.dp.toPx()),
-                            strokeWidth = if (isBar) 2f else 1f
+                    var b = 0
+                    while (b <= beatsTotal) {
+                        val x = b * ticksPerBeat * pxPerTick
+                        Text(
+                            text = "${b / 4 + 1}",
+                            color = Color(0xFFCCCCCC),
+                            fontSize = 10.sp,
+                            modifier = Modifier.offset(x = x.dp, y = 4.dp)
+                        )
+                        b += 4
+                    }
+                }
+            }
+        }
+
+        // Лівий рядок нот + основне поле
+        Row(modifier = Modifier.height(400.dp)) {
+            Column(
+                modifier = Modifier
+                    .width(rulerW.dp)
+                    .verticalScroll(vScroll)
+                    .background(Color(0xFF1A1A1A))
+            ) {
+                Box(modifier = Modifier.height(heightDp.dp)) {
+                    for (n in minNote..maxNote) {
+                        val y = (maxNote - n) * rowHeight
+                        Text(
+                            text = noteLabel(n),
+                            color = if ((n % 12 + 12) % 12 in blackKeySemitones) Color(0xFF888888) else Color.White,
+                            fontSize = 9.sp,
+                            modifier = Modifier.offset(x = 2.dp, y = y.dp)
                         )
                     }
                 }
+            }
 
-                // Ноти
-                notes.forEachIndexed { i, n ->
-                    val color = trackColors[n.trackIndex % trackColors.size]
-                    val xDp = n.start * pxPerTick
-                    val wDp = max(6f, n.dur * pxPerTick)
-                    val yDp = (maxNote - n.note) * rowHeight
-                    val isSelected = selectedIds.contains(n.id)
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .background(Color(0xFF121212))
+                    .verticalScroll(vScroll)
+                    .horizontalScroll(hScroll)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .width(widthDp.dp)
+                        .height(heightDp.dp)
+                        .pointerInput(loadKey, activeTrackIndex, pxPerTick, rowHeight) {
+                            detectTapGestures(onTap = { offset ->
+                                val xDp = offset.x / density.density
+                                val yDp = offset.y / density.density
+                                val tappedTick = (xDp / pxPerTick).toLong()
+                                val tappedNote = (maxNote - (yDp / rowHeight).toInt())
 
-                    Box(
-                        modifier = Modifier
-                            .offset(x = xDp.dp, y = yDp.dp)
-                            .size(wDp.dp, (rowHeight - 2f).dp)
-                            .background(color)
-                            .then(
-                                if (isSelected) Modifier.border(2.dp, Color.Yellow) else Modifier
-                            )
-                            .pointerInput(n.id) {
-                                detectTapGestures(onTap = {
-                                    if (selectedIds.contains(n.id)) {
-                                        selectedIds.remove(n.id)
-                                    } else {
-                                        selectedIds.add(n.id)
-                                    }
-                                })
+                                val hitsExisting = notes.any { n ->
+                                    val nx = n.start * pxPerTick
+                                    val nw = max(6f, n.dur * pxPerTick)
+                                    val ny = (maxNote - n.note) * rowHeight
+                                    xDp in nx..(nx + nw) && yDp in ny..(ny + rowHeight)
+                                }
+                                if (!hitsExisting) {
+                                    val snappedStart = (tappedTick / snapTicks) * snapTicks
+                                    val trackIdx = activeTrackIndex ?: 0
+                                    val newId = idCounter++
+                                    notes.add(
+                                        EditableNote(
+                                            id = newId,
+                                            trackIndex = trackIdx,
+                                            note = tappedNote.coerceIn(0, 127),
+                                            start = snappedStart,
+                                            dur = ticksPerBeat.toLong(),
+                                            vel = 90
+                                        )
+                                    )
+                                    selectedIds.clear()
+                                    selectedIds.add(newId)
+                                    onActiveTrackChangeForNewNotes(trackIdx)
+                                    commit()
+                                }
+                            })
+                        }
+                ) {
+                    // Сітка
+                    Canvas(modifier = Modifier.width(widthDp.dp).height(heightDp.dp)) {
+                        for (n in minNote..maxNote) {
+                            val rowYDp = (maxNote - n) * rowHeight
+                            if ((n % 12 + 12) % 12 in blackKeySemitones) {
+                                drawRect(
+                                    color = Color(0xFF1A1A1A),
+                                    topLeft = Offset(0f, rowYDp.dp.toPx()),
+                                    size = Size(widthDp.dp.toPx(), rowHeight.dp.toPx())
+                                )
                             }
-                            .pointerInput(n.id) {
-                                var accTicks = 0.0
-                                var accSemis = 0.0
-                                detectDragGestures(
-                                    onDragStart = {
-                                        accTicks = 0.0
-                                        accSemis = 0.0
-                                        if (!selectedIds.contains(n.id)) {
-                                            selectedIds.clear()
+                            drawLine(
+                                color = Color(0xFF2A2A2A),
+                                start = Offset(0f, rowYDp.dp.toPx()),
+                                end = Offset(widthDp.dp.toPx(), rowYDp.dp.toPx()),
+                                strokeWidth = 1f
+                            )
+                        }
+                        val beatsTotal = (maxTick / ticksPerBeat).toInt() + 2
+                        for (b in 0..beatsTotal) {
+                            val xDp = b * ticksPerBeat * pxPerTick
+                            val isBar = b % 4 == 0
+                            drawLine(
+                                color = if (isBar) Color(0xFF505050) else Color(0xFF2A2A2A),
+                                start = Offset(xDp.dp.toPx(), 0f),
+                                end = Offset(xDp.dp.toPx(), heightDp.dp.toPx()),
+                                strokeWidth = if (isBar) 2f else 1f
+                            )
+                        }
+                    }
+
+                    // Ноти
+                    notes.forEachIndexed { i, n ->
+                        val color = trackColors[n.trackIndex % trackColors.size]
+                        val xDp = n.start * pxPerTick
+                        val wDp = max(6f, n.dur * pxPerTick)
+                        val yDp = (maxNote - n.note) * rowHeight
+                        val isSelected = selectedIds.contains(n.id)
+                        val isDimmed = activeTrackIndex != null && n.trackIndex != activeTrackIndex
+
+                        Box(
+                            modifier = Modifier
+                                .offset(x = xDp.dp, y = yDp.dp)
+                                .size(wDp.dp, (rowHeight - 2f).dp)
+                                .background(if (isDimmed) color.copy(alpha = 0.25f) else color)
+                                .then(
+                                    if (isSelected) Modifier.border(2.dp, Color.Yellow) else Modifier
+                                )
+                                .pointerInput(n.id) {
+                                    detectTapGestures(onTap = {
+                                        if (selectedIds.contains(n.id)) {
+                                            selectedIds.remove(n.id)
+                                        } else {
                                             selectedIds.add(n.id)
                                         }
-                                    },
-                                    onDragEnd = { snapSelectedToGrid() },
-                                    onDragCancel = { snapSelectedToGrid() }
-                                ) { change, dragAmount ->
-                                    change.consume()
-                                    accTicks += (dragAmount.x / density.density) / pxPerTick
-                                    accSemis += (dragAmount.y / density.density) / rowHeight
-                                    val ticksDelta = accTicks.toInt()
-                                    val semisDelta = accSemis.toInt()
-                                    if (ticksDelta != 0 || semisDelta != 0) {
-                                        moveSelectedRaw(ticksDelta.toLong(), -semisDelta)
-                                        accTicks -= ticksDelta
-                                        accSemis -= semisDelta
+                                    })
+                                }
+                                .pointerInput(n.id) {
+                                    var accTicks = 0.0
+                                    var accSemis = 0.0
+                                    detectDragGestures(
+                                        onDragStart = {
+                                            accTicks = 0.0
+                                            accSemis = 0.0
+                                            if (!selectedIds.contains(n.id)) {
+                                                selectedIds.clear()
+                                                selectedIds.add(n.id)
+                                            }
+                                        },
+                                        onDragEnd = { snapSelectedToGrid() },
+                                        onDragCancel = { snapSelectedToGrid() }
+                                    ) { change, dragAmount ->
+                                        change.consume()
+                                        accTicks += (dragAmount.x / density.density) / pxPerTick
+                                        accSemis += (dragAmount.y / density.density) / rowHeight
+                                        val ticksDelta = accTicks.toInt()
+                                        val semisDelta = accSemis.toInt()
+                                        if (ticksDelta != 0 || semisDelta != 0) {
+                                            moveSelectedRaw(ticksDelta.toLong(), -semisDelta)
+                                            accTicks -= ticksDelta
+                                            accSemis -= semisDelta
+                                        }
                                     }
                                 }
-                            }
-                    )
+                        )
 
-                    // хендл для точної зміни тривалості перетягуванням
-                    val handleWidthDp = 10f
-                    Box(
-                        modifier = Modifier
-                            .offset(x = (xDp + wDp - handleWidthDp).dp, y = yDp.dp)
-                            .size(handleWidthDp.dp, (rowHeight - 2f).dp)
-                            .background(Color.White.copy(alpha = 0.3f))
-                            .pointerInput(n.id) {
-                                detectDragGestures(
-                                    onDragEnd = { commit() }
-                                ) { change, dragAmount ->
-                                    change.consume()
-                                    val dxDp = dragAmount.x / density.density
-                                    val idx = indexOfId(n.id)
-                                    if (idx >= 0) {
-                                        val cur = notes[idx]
-                                        val deltaTicks = (dxDp / pxPerTick).roundToInt()
-                                        val newDur = max(snapTicks.toLong(), cur.dur + deltaTicks)
-                                        notes[idx] = cur.copy(dur = (newDur / snapTicks) * snapTicks)
+                        val handleWidthDp = 10f
+                        Box(
+                            modifier = Modifier
+                                .offset(x = (xDp + wDp - handleWidthDp).dp, y = yDp.dp)
+                                .size(handleWidthDp.dp, (rowHeight - 2f).dp)
+                                .background(Color.White.copy(alpha = 0.3f))
+                                .pointerInput(n.id) {
+                                    detectDragGestures(
+                                        onDragEnd = { commit() }
+                                    ) { change, dragAmount ->
+                                        change.consume()
+                                        val dxDp = dragAmount.x / density.density
+                                        val idx = indexOfId(n.id)
+                                        if (idx >= 0) {
+                                            val cur = notes[idx]
+                                            val deltaTicks = (dxDp / pxPerTick).roundToInt()
+                                            val newDur = max(snapTicks.toLong(), cur.dur + deltaTicks)
+                                            notes[idx] = cur.copy(dur = (newDur / snapTicks) * snapTicks)
+                                        }
                                     }
                                 }
-                            }
-                    )
+                        )
+                    }
+
+                    // Лінія відтворення
+                    if (currentPlaybackTick != null) {
+                        val playX = currentPlaybackTick * pxPerTick
+                        Box(
+                            modifier = Modifier
+                                .offset(x = playX.dp, y = 0.dp)
+                                .width(2.dp)
+                                .height(heightDp.dp)
+                                .background(Color(0xFFFF5252))
+                        )
+                    }
                 }
             }
         }
