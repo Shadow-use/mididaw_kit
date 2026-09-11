@@ -4,16 +4,21 @@ import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -35,6 +40,9 @@ import java.io.File
 
 private enum class PlayState { STOPPED, PLAYING, PAUSED }
 
+private fun shortenName(name: String, max: Int = 10): String =
+    if (name.length > max) name.take(max) + "…" else name
+
 @Composable
 fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     val context = LocalContext.current
@@ -51,6 +59,9 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     var menuExpanded by remember { mutableStateOf(false) }
     var channelMenuExpanded by remember { mutableStateOf(false) }
     var instrumentMenuExpanded by remember { mutableStateOf(false) }
+
+    var renameDialogOpen by remember { mutableStateOf(false) }
+    var renameText by remember { mutableStateOf("") }
 
     fun loadSong(newSong: MidiSong) {
         song = newSong
@@ -113,9 +124,19 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
         if (s == null) {
             Text("Завантаження...")
         } else {
-            Text(text = "${s.title}  |  BPM: ${s.bpm}", modifier = Modifier.padding(bottom = 4.dp))
+            // Заголовок + темп
+            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+                Text(text = "${s.title}", modifier = Modifier.padding(end = 8.dp))
+                Text(text = "BPM: ${s.bpm.roundToIntSafe()}", modifier = Modifier.padding(end = 4.dp))
+                TinyIconBtn("−") {
+                    song = s.copy(bpm = (s.bpm - 1).coerceAtLeast(20.0))
+                }
+                TinyIconBtn("+") {
+                    song = s.copy(bpm = (s.bpm + 1).coerceAtMost(300.0))
+                }
+            }
 
-            Row {
+            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 IconBtn(if (playState == PlayState.PLAYING) "⏸" else "▶") {
                     // якщо вибраний конкретний канал — граємо ТІЛЬКИ його
                     val songToPlay = activeTrackIndex?.let { idx ->
@@ -144,7 +165,8 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                 }
 
                 Box {
-                    IconBtn(activeTrackIndex?.let { s.tracks.getOrNull(it)?.name } ?: "Усі", wide = true) {
+                    val label = activeTrackIndex?.let { s.tracks.getOrNull(it)?.name } ?: "Усі"
+                    IconBtn(shortenName(label), wide = true) {
                         channelMenuExpanded = true
                     }
                     DropdownMenu(expanded = channelMenuExpanded, onDismissRequest = { channelMenuExpanded = false }) {
@@ -170,6 +192,13 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                             activeTrackIndex = newIndex
                             channelMenuExpanded = false
                         })
+                        if (activeTrackIndex != null) {
+                            DropdownMenuItem(text = { Text("✎ Перейменувати") }, onClick = {
+                                renameText = s.tracks.getOrNull(activeTrackIndex!!)?.name ?: ""
+                                renameDialogOpen = true
+                                channelMenuExpanded = false
+                            })
+                        }
                     }
                 }
 
@@ -246,6 +275,36 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                 onPreviewNote = { note, durMs -> player.previewNote(note, durationMs = durMs) },
                 modifier = Modifier.fillMaxSize()
             )
+
+            if (renameDialogOpen) {
+                AlertDialog(
+                    onDismissRequest = { renameDialogOpen = false },
+                    title = { Text("Назва каналу") },
+                    text = {
+                        OutlinedTextField(
+                            value = renameText,
+                            onValueChange = { renameText = it },
+                            singleLine = true
+                        )
+                    },
+                    confirmButton = {
+                        Button(onClick = {
+                            val idx = activeTrackIndex
+                            val cur = song
+                            if (idx != null && cur != null && renameText.isNotBlank()) {
+                                val newTracks = cur.tracks.mapIndexed { i, t ->
+                                    if (i == idx) t.copy(name = renameText) else t
+                                }
+                                song = cur.copy(tracks = newTracks)
+                            }
+                            renameDialogOpen = false
+                        }) { Text("Зберегти") }
+                    },
+                    dismissButton = {
+                        Button(onClick = { renameDialogOpen = false }) { Text("Скасувати") }
+                    }
+                )
+            }
         }
     }
 
@@ -254,11 +313,25 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     }
 }
 
+private fun Double.roundToIntSafe(): Int = Math.round(this).toInt()
+
 @Composable
 private fun IconBtn(label: String, wide: Boolean = false, onClick: () -> Unit) {
     Button(
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = if (wide) 10.dp else 6.dp, vertical = 6.dp),
+        modifier = Modifier.padding(end = 4.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5E35B1))
+    ) {
+        Text(label, color = Color.White)
+    }
+}
+
+@Composable
+private fun TinyIconBtn(label: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
         modifier = Modifier.padding(end = 4.dp),
         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5E35B1))
     ) {

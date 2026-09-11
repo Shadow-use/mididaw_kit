@@ -50,6 +50,10 @@ private val trackColors = listOf(
 private val blackKeySemitones = setOf(1, 3, 6, 8, 10)
 private val noteNames = listOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
+// набір дробів тривалості для перебору стрілками
+private val durationSteps = listOf(0.0625, 0.125, 0.25, 0.5, 1.0)
+private val durationLabels = listOf("1/16", "1/8", "1/4", "1/2", "1/1")
+
 private fun noteLabel(n: Int): String {
     val octave = n / 12 - 1
     return "${noteNames[((n % 12) + 12) % 12]}$octave"
@@ -75,11 +79,6 @@ private fun rebuildSong(original: MidiSong, notes: List<EditableNote>): MidiSong
     return original.copy(tracks = newTracks)
 }
 
-/**
- * loadKey — окремий ключ для скидання внутрішнього списку нот (наприклад,
- * лічильник завантажень). Зміна самого initialSong (наприклад, зміна
- * program каналу ззовні) НЕ скидає ноти — лише зміна loadKey.
- */
 @Composable
 fun EditablePianoRollView(
     initialSong: MidiSong,
@@ -108,6 +107,7 @@ fun EditablePianoRollView(
         }
     }
     var idCounter by remember(loadKey) { mutableStateOf(notes.size) }
+    var durationIndex by remember(loadKey) { mutableStateOf(2) } // за замовч. 1/4
 
     val selectedIds = remember(loadKey) { mutableStateListOf<Int>() }
     val density = LocalDensity.current
@@ -151,13 +151,23 @@ fun EditablePianoRollView(
         }
     }
 
-    fun setSelectedDuration(fractionOfWhole: Double) {
-        val dur = (ticksPerBeat * 4 * fractionOfWhole).roundToInt().toLong().coerceAtLeast(1L)
+    fun applyDuration(index: Int) {
+        val dur = (ticksPerBeat * 4 * durationSteps[index]).roundToInt().toLong().coerceAtLeast(1L)
         selectedIds.forEach { id ->
             val idx = indexOfId(id)
             if (idx >= 0) notes[idx] = notes[idx].copy(dur = dur)
         }
         commit()
+        val firstId = selectedIds.firstOrNull()
+        if (firstId != null) {
+            val idx = indexOfId(firstId)
+            if (idx >= 0) onPreviewNote(notes[idx].note, previewDurMs(notes[idx].dur))
+        }
+    }
+
+    fun stepDuration(delta: Int) {
+        durationIndex = (durationIndex + delta).coerceIn(0, durationSteps.lastIndex)
+        applyDuration(durationIndex)
     }
 
     fun deleteSelected() {
@@ -275,7 +285,8 @@ fun EditablePianoRollView(
                                         val trackIdx = activeTrackIndex ?: 0
                                         val newId = idCounter++
                                         val newNoteVal = tappedNote.coerceIn(0, 127)
-                                        val newDur = ticksPerBeat.toLong()
+                                        val newDur = (ticksPerBeat * 4 * durationSteps[durationIndex])
+                                            .roundToInt().toLong().coerceAtLeast(1L)
                                         notes.add(
                                             EditableNote(
                                                 id = newId,
@@ -434,57 +445,53 @@ fun EditablePianoRollView(
             }
         }
 
-        // Нижня напівпрозора панель команд — з'являється лише при виділенні
+        // Нижня напівпрозора панель команд — компактна, іконки без підписів
         if (selectedIds.isNotEmpty()) {
             Box(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .fillMaxHeight(0.34f)
                     .background(Color.Black.copy(alpha = 0.82f))
             ) {
-                Column(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .verticalScroll(rememberScrollState())
-                        .padding(10.dp)
+                        .horizontalScroll(rememberScrollState())
+                        .padding(horizontal = 6.dp, vertical = 6.dp)
                 ) {
-                    Row {
-                        Text(
-                            "${selectedIds.size} нот",
-                            color = Color.White,
-                            modifier = Modifier.padding(end = 8.dp)
-                        )
-                        SmallBtn("✕ Зняти") { selectedIds.clear() }
-                        SmallBtn("🗑 Видалити") { deleteSelected() }
-                    }
-                    Row(modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp)) {
-                        SmallBtn("←") { nudgeSelected(-snapTicks.toLong(), 0) }
-                        SmallBtn("→") { nudgeSelected(snapTicks.toLong(), 0) }
-                        SmallBtn("↑") { nudgeSelected(0, 1) }
-                        SmallBtn("↓") { nudgeSelected(0, -1) }
-                        SmallBtn("Окт+") { nudgeSelected(0, 12) }
-                        SmallBtn("Окт−") { nudgeSelected(0, -12) }
-                    }
-                    Row(modifier = Modifier.horizontalScroll(rememberScrollState()).padding(top = 6.dp)) {
-                        Text("Тривалість:", color = Color.White, modifier = Modifier.padding(end = 6.dp))
-                        SmallBtn("1/16") { setSelectedDuration(0.0625) }
-                        SmallBtn("1/8") { setSelectedDuration(0.125) }
-                        SmallBtn("1/4") { setSelectedDuration(0.25) }
-                        SmallBtn("1/2") { setSelectedDuration(0.5) }
-                        SmallBtn("1/1") { setSelectedDuration(1.0) }
-                    }
+                    Text(
+                        "${selectedIds.size}",
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(end = 4.dp, top = 8.dp)
+                    )
+                    TinyBtn("✕") { selectedIds.clear() }
+                    TinyBtn("🗑") { deleteSelected() }
+                    TinyBtn("←") { nudgeSelected(-snapTicks.toLong(), 0) }
+                    TinyBtn("→") { nudgeSelected(snapTicks.toLong(), 0) }
+                    TinyBtn("↑") { nudgeSelected(0, 1) }
+                    TinyBtn("↓") { nudgeSelected(0, -1) }
+                    TinyBtn("8+") { nudgeSelected(0, 12) }
+                    TinyBtn("8−") { nudgeSelected(0, -12) }
+                    TinyBtn("◀") { stepDuration(-1) }
+                    Text(
+                        durationLabels[durationIndex],
+                        color = Color.White,
+                        fontSize = 12.sp,
+                        modifier = Modifier.padding(horizontal = 2.dp, vertical = 8.dp)
+                    )
+                    TinyBtn("▶") { stepDuration(1) }
                 }
             }
         } else {
-            Text(
-                "Тап по ноті — виділити. Тап по пустому місцю — додати ноту.",
-                color = Color(0xFFAAAAAA),
-                fontSize = 11.sp,
+            Column(
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(6.dp)
-            )
+                    .align(Alignment.BottomStart)
+                    .padding(start = rulerW.dp + 6.dp, bottom = 4.dp)
+            ) {
+                Text("Тап по ноті — виділити", color = Color(0xFFAAAAAA), fontSize = 10.sp)
+                Text("Тап по пустому місцю — додати ноту", color = Color(0xFFAAAAAA), fontSize = 10.sp)
+            }
         }
     }
 }
@@ -498,5 +505,17 @@ private fun SmallBtn(label: String, onClick: () -> Unit) {
         colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A3A3A))
     ) {
         Text(label, color = Color.White)
+    }
+}
+
+@Composable
+private fun TinyBtn(label: String, onClick: () -> Unit) {
+    Button(
+        onClick = onClick,
+        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
+        modifier = Modifier.padding(end = 3.dp),
+        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF3A3A3A))
+    ) {
+        Text(label, color = Color.White, fontSize = 13.sp)
     }
 }
