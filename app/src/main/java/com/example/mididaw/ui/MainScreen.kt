@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.mididaw.audio.MidiPlayer
+import com.example.mididaw.audio.RealMidiPlayer
 import com.example.mididaw.model.MidiJsonParser
 import com.example.mididaw.model.MidiSong
 import com.example.mididaw.model.MidiTrack
@@ -46,7 +47,14 @@ private fun shortenName(name: String, max: Int = 10): String =
 @Composable
 fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     val context = LocalContext.current
-    val player = remember { MidiPlayer() }
+
+    // previewPlayer — легкий саморобний синтезатор, лише для миттєвого
+    // звукового відгуку при тапі/перетягуванні ноти в редакторі.
+    val previewPlayer = remember { MidiPlayer() }
+
+    // realPlayer — справжній .mid через системний Android MIDI-синтезатор,
+    // для повноцінного Play.
+    val realPlayer = remember { RealMidiPlayer(context) }
 
     var song by remember { mutableStateOf<MidiSong?>(null) }
     var loadVersion by remember { mutableStateOf(0) }
@@ -66,7 +74,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     fun loadSong(newSong: MidiSong) {
         song = newSong
         activeTrackIndex = null
-        player.stop()
+        realPlayer.stop()
         playState = PlayState.STOPPED
         currentPlaybackTick = null
         loadVersion++
@@ -104,16 +112,15 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
 
     LaunchedEffect(playState) {
         while (playState == PlayState.PLAYING) {
+            if (!realPlayer.isPlaying()) {
+                playState = PlayState.STOPPED
+                currentPlaybackTick = null
+                break
+            }
             val s = song
-            if (s != null && player.lastDurationMs > 0) {
-                val posMs = player.currentPositionMs()
-                if (posMs >= player.lastDurationMs) {
-                    playState = PlayState.STOPPED
-                    currentPlaybackTick = null
-                    break
-                }
+            if (s != null) {
                 val msPerTick = 60000.0 / (s.bpm * s.ticksPerBeat)
-                currentPlaybackTick = (posMs / msPerTick).toLong()
+                currentPlaybackTick = (realPlayer.currentPositionMs() / msPerTick).toLong()
             }
             delay(30)
         }
@@ -145,21 +152,21 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
 
                     when (playState) {
                         PlayState.STOPPED -> {
-                            player.play(songToPlay)
+                            realPlayer.play(songToPlay)
                             playState = PlayState.PLAYING
                         }
                         PlayState.PLAYING -> {
-                            player.pause()
+                            realPlayer.pause()
                             playState = PlayState.PAUSED
                         }
                         PlayState.PAUSED -> {
-                            player.resume()
+                            realPlayer.resume()
                             playState = PlayState.PLAYING
                         }
                     }
                 }
                 IconBtn("■") {
-                    player.stop()
+                    realPlayer.stop()
                     playState = PlayState.STOPPED
                     currentPlaybackTick = null
                 }
@@ -245,7 +252,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                                 }
                             })
                         }
-                        DropdownMenuItem(text = { Text("Зберегти") }, onClick = {
+                        DropdownMenuItem(text = { Text("Зберегти JSON") }, onClick = {
                             menuExpanded = false
                             val current = song
                             if (current != null) {
@@ -255,6 +262,17 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                                 val file = File(dir, "${safeTitle}_${System.currentTimeMillis()}.json")
                                 file.writeText(json)
                                 Toast.makeText(context, "Збережено: ${file.name}", Toast.LENGTH_LONG).show()
+                            }
+                        })
+                        DropdownMenuItem(text = { Text("🎵 Експортувати .mid") }, onClick = {
+                            menuExpanded = false
+                            val current = song
+                            if (current != null) {
+                                val dir = context.getExternalFilesDir(null)
+                                val safeTitle = current.title.ifBlank { "song" }.replace(Regex("[^A-Za-z0-9_-]"), "_")
+                                val file = File(dir, "${safeTitle}_${System.currentTimeMillis()}.mid")
+                                realPlayer.exportToFile(current, file)
+                                Toast.makeText(context, "Експортовано: ${file.name}", Toast.LENGTH_LONG).show()
                             }
                         })
                         DropdownMenuItem(text = { Text("Вихід") }, onClick = {
@@ -272,7 +290,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                 currentPlaybackTick = currentPlaybackTick,
                 onSongChanged = { updated -> song = updated },
                 onActiveTrackChangeForNewNotes = { idx -> activeTrackIndex = idx },
-                onPreviewNote = { note, durMs -> player.previewNote(note, durationMs = durMs) },
+                onPreviewNote = { note, durMs -> previewPlayer.previewNote(note, durationMs = durMs) },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -309,7 +327,10 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     }
 
     DisposableEffect(Unit) {
-        onDispose { player.stop() }
+        onDispose {
+            previewPlayer.stop()
+            realPlayer.stop()
+        }
     }
 }
 
