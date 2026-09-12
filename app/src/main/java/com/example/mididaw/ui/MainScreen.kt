@@ -18,6 +18,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -370,9 +371,12 @@ private fun IconBtn(label: String, wide: Boolean = false, onClick: () -> Unit) {
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = if (wide) 10.dp else 6.dp, vertical = 6.dp),
         modifier = Modifier.padding(end = 4.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5E35B1))
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        )
     ) {
-        Text(label, color = Color.White)
+        Text(label)
     }
 }
 
@@ -382,8 +386,11 @@ private fun TinyIconBtn(label: String, onClick: () -> Unit) {
         onClick = onClick,
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
         modifier = Modifier.padding(end = 4.dp),
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF5E35B1))
+        colors = ButtonDefaults.buttonColors(
+            containerColor = MaterialTheme.colorScheme.primary,
+            contentColor = MaterialTheme.colorScheme.onPrimary
+        )
     ) {
-        Text(label, color = Color.White)
+        Text(label)
     }
 }
