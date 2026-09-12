@@ -25,6 +25,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -43,6 +44,8 @@ import java.io.File
 
 private enum class PlayState { STOPPED, PLAYING, PAUSED }
 
+private const val MAX_HISTORY = 50
+
 private fun shortenName(name: String, max: Int = 10): String =
     if (name.length > max) name.take(max) + "…" else name
 
@@ -57,6 +60,11 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     var loadVersion by remember { mutableStateOf(0) }
     var availableAssets by remember { mutableStateOf<List<String>>(emptyList()) }
 
+    // Undo/Redo — стек попередніх/наступних станів усієї пісні
+    // (ноти, темп, канали, інструменти — все разом).
+    val undoStack = remember { mutableStateListOf<MidiSong>() }
+    val redoStack = remember { mutableStateListOf<MidiSong>() }
+
     var activeTrackIndex by remember { mutableStateOf<Int?>(null) } // null = "Усі"
     var playState by remember { mutableStateOf(PlayState.STOPPED) }
     var currentPlaybackTick by remember { mutableStateOf<Long?>(null) }
@@ -68,8 +76,46 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     var renameDialogOpen by remember { mutableStateOf(false) }
     var renameText by remember { mutableStateOf("") }
 
+    fun clampActiveTrack(s: MidiSong) {
+        val idx = activeTrackIndex
+        if (idx != null && idx >= s.tracks.size) activeTrackIndex = null
+    }
+
+    /** Будь-яка зміна пісні користувачем (ноти, темп, канали...) іде через це — пушить попередній стан в undo. */
+    fun updateSong(newSong: MidiSong) {
+        val cur = song
+        if (cur != null) {
+            undoStack.add(cur)
+            if (undoStack.size > MAX_HISTORY) undoStack.removeAt(0)
+        }
+        redoStack.clear()
+        song = newSong
+    }
+
+    fun undo() {
+        if (undoStack.isEmpty()) return
+        val cur = song
+        if (cur != null) redoStack.add(cur)
+        val restored = undoStack.removeAt(undoStack.lastIndex)
+        song = restored
+        clampActiveTrack(restored)
+        loadVersion++ // змушує піано-рол перечитати ноти зі стану, що повернули
+    }
+
+    fun redo() {
+        if (redoStack.isEmpty()) return
+        val cur = song
+        if (cur != null) undoStack.add(cur)
+        val restored = redoStack.removeAt(redoStack.lastIndex)
+        song = restored
+        clampActiveTrack(restored)
+        loadVersion++
+    }
+
     fun loadSong(newSong: MidiSong) {
         song = newSong
+        undoStack.clear()
+        redoStack.clear()
         activeTrackIndex = null
         realPlayer.stop()
         playState = PlayState.STOPPED
@@ -135,16 +181,14 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                 .map { it.index }
                 .toSet()
 
-            // Заголовок + темп
-            Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
+            // Заголовок + темп + undo/redo
+            Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(bottom = 4.dp)) {
                 Text(text = "${s.title}", modifier = Modifier.padding(end = 8.dp))
                 Text(text = "BPM: ${s.bpm.roundToIntSafe()}", modifier = Modifier.padding(end = 4.dp))
-                TinyIconBtn("−") {
-                    song = s.copy(bpm = (s.bpm - 1).coerceAtLeast(20.0))
-                }
-                TinyIconBtn("+") {
-                    song = s.copy(bpm = (s.bpm + 1).coerceAtMost(300.0))
-                }
+                TinyIconBtn("−") { updateSong(s.copy(bpm = (s.bpm - 1).coerceAtLeast(20.0))) }
+                TinyIconBtn("+") { updateSong(s.copy(bpm = (s.bpm + 1).coerceAtMost(300.0))) }
+                TinyIconBtn("↶", enabled = undoStack.isNotEmpty()) { undo() }
+                TinyIconBtn("↷", enabled = redoStack.isNotEmpty()) { redo() }
             }
 
             Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
@@ -199,7 +243,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                                 events = emptyList()
                             )
                             val newIndex = s.tracks.size
-                            song = s.copy(tracks = s.tracks + newTrack)
+                            updateSong(s.copy(tracks = s.tracks + newTrack))
                             activeTrackIndex = newIndex
                             channelMenuExpanded = false
                         })
@@ -212,7 +256,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                                     events = emptyList()
                                 )
                                 val newIndex = s.tracks.size
-                                song = s.copy(tracks = s.tracks + drumTrack)
+                                updateSong(s.copy(tracks = s.tracks + drumTrack))
                                 activeTrackIndex = newIndex
                                 channelMenuExpanded = false
                             })
@@ -251,7 +295,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                                         val newTracks = s.tracks.mapIndexed { ti, t ->
                                             if (ti == idx) t.copy(program = i) else t
                                         }
-                                        song = s.copy(tracks = newTracks)
+                                        updateSong(s.copy(tracks = newTracks))
                                     }
                                     instrumentMenuExpanded = false
                                 })
@@ -317,7 +361,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                 currentPlaybackTick = currentPlaybackTick,
                 isDrumChannel = isDrumChannel,
                 drumTrackIndices = drumTrackIndices,
-                onSongChanged = { updated -> song = updated },
+                onSongChanged = { updated -> updateSong(updated) },
                 onActiveTrackChangeForNewNotes = { idx -> activeTrackIndex = idx },
                 onPreviewNote = { note, vel, durMs -> previewPlayer.previewNote(note, vel, durMs) },
                 modifier = Modifier.fillMaxSize()
@@ -342,7 +386,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                                 val newTracks = cur.tracks.mapIndexed { i, t ->
                                     if (i == idx) t.copy(name = renameText) else t
                                 }
-                                song = cur.copy(tracks = newTracks)
+                                updateSong(cur.copy(tracks = newTracks))
                             }
                             renameDialogOpen = false
                         }) { Text("Зберегти") }
@@ -366,9 +410,10 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
 private fun Double.roundToIntSafe(): Int = Math.round(this).toInt()
 
 @Composable
-private fun IconBtn(label: String, wide: Boolean = false, onClick: () -> Unit) {
+private fun IconBtn(label: String, wide: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         contentPadding = PaddingValues(horizontal = if (wide) 10.dp else 6.dp, vertical = 6.dp),
         modifier = Modifier.padding(end = 4.dp),
         colors = ButtonDefaults.buttonColors(
@@ -381,9 +426,10 @@ private fun IconBtn(label: String, wide: Boolean = false, onClick: () -> Unit) {
 }
 
 @Composable
-private fun TinyIconBtn(label: String, onClick: () -> Unit) {
+private fun TinyIconBtn(label: String, enabled: Boolean = true, onClick: () -> Unit) {
     Button(
         onClick = onClick,
+        enabled = enabled,
         contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp),
         modifier = Modifier.padding(end = 4.dp),
         colors = ButtonDefaults.buttonColors(
