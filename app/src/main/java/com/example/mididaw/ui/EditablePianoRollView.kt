@@ -102,17 +102,23 @@ fun EditablePianoRollView(
     var rowHeight by remember { mutableStateOf(28f) }
     val snapTicks = max(1, ticksPerBeat / 4)
 
+    // Наскрізний лічильник id — НЕ прив'язаний до loadKey, тому ніколи не
+    // обнуляється при undo/redo/перезавантаженні. Це критично: якщо id
+    // почати рахувати з нуля заново після undo, стара нота й випадково
+    // нова нота з тим самим id виглядають для Compose "тим самим"
+    // елементом, і pointerInput(n.id) не перезапускається — тап по такій
+    // ноті лишається прив'язаним до застарілих даних і не працює.
+    val globalNextId = remember { mutableStateOf(0) }
+
     val notes = remember(loadKey) {
-        var nextId = 0
         mutableStateListOf<EditableNote>().apply {
             initialSong.tracks.forEachIndexed { trackIdx, track ->
                 track.events.forEach { e ->
-                    add(EditableNote(nextId++, trackIdx, e.note, e.start, e.dur, e.vel))
+                    add(EditableNote(globalNextId.value++, trackIdx, e.note, e.start, e.dur, e.vel))
                 }
             }
         }
     }
-    var idCounter by remember(loadKey) { mutableStateOf(notes.size) }
     var durationIndex by remember(loadKey) { mutableStateOf(2) } // за замовч. 1/4
 
     val selectedIds = remember(loadKey) { mutableStateListOf<Int>() }
@@ -207,7 +213,7 @@ fun EditablePianoRollView(
 
         val newIds = mutableListOf<Int>()
         selectedNotes.forEach { n ->
-            val newId = idCounter++
+            val newId = globalNextId.value++
             notes.add(n.copy(id = newId, start = n.start + span))
             newIds.add(newId)
         }
@@ -350,7 +356,7 @@ fun EditablePianoRollView(
                                 if (!hitsExisting) {
                                     val snappedStart = (tappedTick / snapTicks) * snapTicks
                                     val trackIdx = activeTrackIndex ?: 0
-                                    val newId = idCounter++
+                                    val newId = globalNextId.value++
                                     val newNoteVal = tappedNote.coerceIn(0, 127)
                                     val newDur = (ticksPerBeat * 4 * durationSteps[durationIndex])
                                         .roundToInt().toLong().coerceAtLeast(1L)
