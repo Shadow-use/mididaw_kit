@@ -25,13 +25,13 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.7"
+          cache-disabled: true
 
-      - name: Build debug APK
-        run: gradle assembleDebug
+      - name: Clean build
+        run: gradle clean assembleDebug --no-build-cache --rerun-tasks
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: mididaw-APK
           path: app/build/outputs/apk/debug/app-debug.apk
-      
