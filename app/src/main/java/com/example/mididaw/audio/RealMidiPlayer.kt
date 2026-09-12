@@ -8,9 +8,7 @@ import java.io.File
 
 /**
  * Грає СПРАВЖНІЙ .mid через вбудований у Android MIDI-синтезатор
- * (Sonivox EAS) — реальні GM-інструменти по program/channel, не наш
- * саморобний синтезатор. Пишемо тимчасовий .mid у cacheDir і віддаємо
- * MediaPlayer'у.
+ * (Sonivox EAS) — реальні GM-інструменти по program/channel.
  */
 class RealMidiPlayer(private val context: Context) {
 
@@ -27,6 +25,7 @@ class RealMidiPlayer(private val context: Context) {
 
         val mp = MediaPlayer()
         mp.setDataSource(file.absolutePath)
+        mp.setVolume(1f, 1f)
         mp.prepare()
         mp.start()
         mediaPlayer = mp

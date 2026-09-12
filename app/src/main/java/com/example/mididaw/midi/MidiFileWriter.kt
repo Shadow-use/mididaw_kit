@@ -3,11 +3,11 @@ package com.example.mididaw.midi
 import com.example.mididaw.model.MidiSong
 import com.example.mididaw.model.MidiTrack
 import java.io.ByteArrayOutputStream
+import kotlin.math.roundToInt
 
 /**
  * Пише Standard MIDI File (формат 1, багатотрековий) прямо з MidiSong —
- * без mido, без Termux, без зовнішніх бібліотек. Те, що робив твій
- * midi_converter_v3.py, тепер відбувається прямо в застосунку.
+ * без mido, без Termux, без зовнішніх бібліотек.
  */
 object MidiFileWriter {
 
@@ -52,6 +52,10 @@ object MidiFileWriter {
 
     private data class Ev(val tick: Long, val isNoteOn: Boolean, val note: Int, val vel: Int)
 
+    /** Піднімає гучність ноти, зберігаючи відносну динаміку. */
+    private fun boostVelocity(vel: Int): Int =
+        (vel.coerceIn(1, 127) * 1.5).roundToInt().coerceIn(1, 127)
+
     private fun buildInstrumentTrack(track: MidiTrack): ByteArray {
         val body = ByteArrayOutputStream()
         val channel = ((track.channel % 16) + 16) % 16
@@ -59,7 +63,7 @@ object MidiFileWriter {
         val events = mutableListOf<Ev>()
         for (e in track.events) {
             val note = e.note.coerceIn(0, 127)
-            val vel = e.vel.coerceIn(1, 127)
+            val vel = boostVelocity(e.vel)
             events.add(Ev(e.start, true, note, vel))
             events.add(Ev(e.start + e.dur, false, note, 0))
         }
@@ -75,6 +79,14 @@ object MidiFileWriter {
         writeVarLen(body, 0)
         body.write(0xC0 or channel)
         body.write(track.program.coerceIn(0, 127))
+
+        // Гучність каналу на максимум (CC7 = Channel Volume, CC11 = Expression) —
+        // за замовчуванням деякі синтезатори ставлять їх на середину (~100/127),
+        // через що мелодія звучить тихо.
+        writeVarLen(body, 0)
+        body.write(0xB0 or channel); body.write(7); body.write(127)
+        writeVarLen(body, 0)
+        body.write(0xB0 or channel); body.write(11); body.write(127)
 
         for (ev in events) {
             val delta = (ev.tick - lastTick).coerceAtLeast(0)
@@ -117,7 +129,6 @@ object MidiFileWriter {
         out.write(v and 0xFF)
     }
 
-    /** Стандартна variable-length quantity кодировка (7 біт/байт, MSB=1 = є продовження). */
     private fun writeVarLen(out: ByteArrayOutputStream, valueIn: Long) {
         var value = valueIn.coerceAtLeast(0)
         val stack = mutableListOf<Long>()

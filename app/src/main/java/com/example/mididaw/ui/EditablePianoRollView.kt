@@ -37,6 +37,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.mididaw.midi.GmInstruments
 import com.example.mididaw.model.MidiEvent
 import com.example.mididaw.model.MidiSong
 import kotlin.math.max
@@ -50,7 +51,6 @@ private val trackColors = listOf(
 private val blackKeySemitones = setOf(1, 3, 6, 8, 10)
 private val noteNames = listOf("C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B")
 
-// набір дробів тривалості для перебору стрілками
 private val durationSteps = listOf(0.0625, 0.125, 0.25, 0.5, 1.0)
 private val durationLabels = listOf("1/16", "1/8", "1/4", "1/2", "1/1")
 
@@ -85,6 +85,7 @@ fun EditablePianoRollView(
     loadKey: Any,
     activeTrackIndex: Int?,
     currentPlaybackTick: Long?,
+    isDrumChannel: Boolean = false,
     onSongChanged: (MidiSong) -> Unit,
     onActiveTrackChangeForNewNotes: (Int) -> Unit = {},
     onPreviewNote: (note: Int, durMs: Long) -> Unit = { _, _ -> },
@@ -189,7 +190,7 @@ fun EditablePianoRollView(
 
     val widthDp = max(400f, maxTick * pxPerTick + 60f)
     val heightDp = noteRange * rowHeight
-    val rulerW = 52f
+    val rulerW = if (isDrumChannel) 92f else 52f
 
     Box(modifier = modifier.background(Color(0xFF121212))) {
         Column(modifier = Modifier.fillMaxWidth().fillMaxHeight()) {
@@ -246,10 +247,16 @@ fun EditablePianoRollView(
                     Box(modifier = Modifier.height(heightDp.dp)) {
                         for (n in minNote..maxNote) {
                             val y = (maxNote - n) * rowHeight
+                            val label = if (isDrumChannel) {
+                                GmInstruments.DRUM_NAMES[n] ?: noteLabel(n)
+                            } else {
+                                noteLabel(n)
+                            }
                             Text(
-                                text = noteLabel(n),
+                                text = label,
                                 color = if ((n % 12 + 12) % 12 in blackKeySemitones) Color(0xFF888888) else Color.White,
                                 fontSize = 9.sp,
+                                maxLines = 1,
                                 modifier = Modifier.offset(x = 2.dp, y = y.dp)
                             )
                         }

@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.example.mididaw.audio.MidiPlayer
 import com.example.mididaw.audio.RealMidiPlayer
+import com.example.mididaw.midi.GmInstruments
 import com.example.mididaw.model.MidiJsonParser
 import com.example.mididaw.model.MidiSong
 import com.example.mididaw.model.MidiTrack
@@ -48,12 +49,7 @@ private fun shortenName(name: String, max: Int = 10): String =
 fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
     val context = LocalContext.current
 
-    // previewPlayer — легкий саморобний синтезатор, лише для миттєвого
-    // звукового відгуку при тапі/перетягуванні ноти в редакторі.
     val previewPlayer = remember { MidiPlayer() }
-
-    // realPlayer — справжній .mid через системний Android MIDI-синтезатор,
-    // для повноцінного Play.
     val realPlayer = remember { RealMidiPlayer(context) }
 
     var song by remember { mutableStateOf<MidiSong?>(null) }
@@ -131,6 +127,8 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
         if (s == null) {
             Text("Завантаження...")
         } else {
+            val isDrumChannel = activeTrackIndex?.let { s.tracks.getOrNull(it)?.channel == GmInstruments.DRUM_CHANNEL } ?: false
+
             // Заголовок + темп
             Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
                 Text(text = "${s.title}", modifier = Modifier.padding(end = 8.dp))
@@ -145,7 +143,6 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
 
             Row(modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())) {
                 IconBtn(if (playState == PlayState.PLAYING) "⏸" else "▶") {
-                    // якщо вибраний конкретний канал — граємо ТІЛЬКИ його
                     val songToPlay = activeTrackIndex?.let { idx ->
                         s.tracks.getOrNull(idx)?.let { t -> s.copy(tracks = listOf(t)) }
                     } ?: s
@@ -182,7 +179,8 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                             channelMenuExpanded = false
                         })
                         s.tracks.forEachIndexed { i, t ->
-                            DropdownMenuItem(text = { Text(t.name) }, onClick = {
+                            val suffix = if (t.channel == GmInstruments.DRUM_CHANNEL) " 🥁" else ""
+                            DropdownMenuItem(text = { Text(t.name + suffix) }, onClick = {
                                 activeTrackIndex = i
                                 channelMenuExpanded = false
                             })
@@ -190,7 +188,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                         DropdownMenuItem(text = { Text("+ Додати канал") }, onClick = {
                             val newTrack = MidiTrack(
                                 name = "Track ${s.tracks.size + 1}",
-                                channel = s.tracks.size,
+                                channel = s.tracks.count { it.channel != GmInstruments.DRUM_CHANNEL },
                                 program = 0,
                                 events = emptyList()
                             )
@@ -199,6 +197,20 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                             activeTrackIndex = newIndex
                             channelMenuExpanded = false
                         })
+                        if (s.tracks.none { it.channel == GmInstruments.DRUM_CHANNEL }) {
+                            DropdownMenuItem(text = { Text("+ Додати ударні (канал 10) 🥁") }, onClick = {
+                                val drumTrack = MidiTrack(
+                                    name = "Drums",
+                                    channel = GmInstruments.DRUM_CHANNEL,
+                                    program = 0,
+                                    events = emptyList()
+                                )
+                                val newIndex = s.tracks.size
+                                song = s.copy(tracks = s.tracks + drumTrack)
+                                activeTrackIndex = newIndex
+                                channelMenuExpanded = false
+                            })
+                        }
                         if (activeTrackIndex != null) {
                             DropdownMenuItem(text = { Text("✎ Перейменувати") }, onClick = {
                                 renameText = s.tracks.getOrNull(activeTrackIndex!!)?.name ?: ""
@@ -209,20 +221,30 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                     }
                 }
 
-                if (activeTrackIndex != null) {
+                // Інструмент — прихований для каналу ударних (там program не діє)
+                if (activeTrackIndex != null && !isDrumChannel) {
                     Box {
                         val curProgram = s.tracks.getOrNull(activeTrackIndex!!)?.program ?: 0
-                        IconBtn("${curProgram + 1}", wide = true) { instrumentMenuExpanded = true }
+                        IconBtn(shortenName(GmInstruments.NAMES.getOrElse(curProgram) { "?" }, 12), wide = true) {
+                            instrumentMenuExpanded = true
+                        }
                         DropdownMenu(
                             expanded = instrumentMenuExpanded,
                             onDismissRequest = { instrumentMenuExpanded = false }
                         ) {
-                            (1..128).forEach { p ->
-                                DropdownMenuItem(text = { Text("$p") }, onClick = {
+                            GmInstruments.NAMES.forEachIndexed { i, name ->
+                                if (i % 8 == 0) {
+                                    DropdownMenuItem(
+                                        text = { Text("— ${GmInstruments.CATEGORIES[i / 8]} —", color = Color.Gray) },
+                                        onClick = {},
+                                        enabled = false
+                                    )
+                                }
+                                DropdownMenuItem(text = { Text("${i + 1}. $name") }, onClick = {
                                     val idx = activeTrackIndex
                                     if (idx != null) {
-                                        val newTracks = s.tracks.mapIndexed { i, t ->
-                                            if (i == idx) t.copy(program = p - 1) else t
+                                        val newTracks = s.tracks.mapIndexed { ti, t ->
+                                            if (ti == idx) t.copy(program = i) else t
                                         }
                                         song = s.copy(tracks = newTracks)
                                     }
@@ -288,6 +310,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                 loadKey = loadVersion,
                 activeTrackIndex = activeTrackIndex,
                 currentPlaybackTick = currentPlaybackTick,
+                isDrumChannel = isDrumChannel,
                 onSongChanged = { updated -> song = updated },
                 onActiveTrackChangeForNewNotes = { idx -> activeTrackIndex = idx },
                 onPreviewNote = { note, durMs -> previewPlayer.previewNote(note, durationMs = durMs) },
