@@ -127,7 +127,12 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
         if (s == null) {
             Text("Завантаження...")
         } else {
-            val isDrumChannel = activeTrackIndex?.let { s.tracks.getOrNull(it)?.channel == GmInstruments.DRUM_CHANNEL } ?: false
+            val isDrumChannel = activeTrackIndex
+                ?.let { s.tracks.getOrNull(it)?.channel == GmInstruments.DRUM_CHANNEL } ?: false
+            val drumTrackIndices = s.tracks.withIndex()
+                .filter { it.value.channel == GmInstruments.DRUM_CHANNEL }
+                .map { it.index }
+                .toSet()
 
             // Заголовок + темп
             Row(modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)) {
@@ -197,7 +202,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                             activeTrackIndex = newIndex
                             channelMenuExpanded = false
                         })
-                        if (s.tracks.none { it.channel == GmInstruments.DRUM_CHANNEL }) {
+                        if (drumTrackIndices.isEmpty()) {
                             DropdownMenuItem(text = { Text("+ Додати ударні (канал 10) 🥁") }, onClick = {
                                 val drumTrack = MidiTrack(
                                     name = "Drums",
@@ -221,7 +226,6 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                     }
                 }
 
-                // Інструмент — прихований для каналу ударних (там program не діє)
                 if (activeTrackIndex != null && !isDrumChannel) {
                     Box {
                         val curProgram = s.tracks.getOrNull(activeTrackIndex!!)?.program ?: 0
@@ -311,9 +315,10 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
                 activeTrackIndex = activeTrackIndex,
                 currentPlaybackTick = currentPlaybackTick,
                 isDrumChannel = isDrumChannel,
+                drumTrackIndices = drumTrackIndices,
                 onSongChanged = { updated -> song = updated },
                 onActiveTrackChangeForNewNotes = { idx -> activeTrackIndex = idx },
-                onPreviewNote = { note, durMs -> previewPlayer.previewNote(note, durationMs = durMs) },
+                onPreviewNote = { note, vel, durMs -> previewPlayer.previewNote(note, vel, durMs) },
                 modifier = Modifier.fillMaxSize()
             )
 
@@ -351,7 +356,7 @@ fun MainScreen(defaultAssetFileName: String = "jingle-bells.json") {
 
     DisposableEffect(Unit) {
         onDispose {
-            previewPlayer.stop()
+            previewPlayer.release()
             realPlayer.stop()
         }
     }
